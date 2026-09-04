@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TEST DASHBOARD</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="card" style="max-width: 640px;">
+    <h1>📊 TEST DASHBOARD</h1>
+    <p class="subtitle">آمار واقعی از دیتابیس — هیچ عددی جعل نمی‌شود.</p>
+
+    <div id="loginBox">
+      <label for="adminKey">Admin Key</label>
+      <input type="password" id="adminKey" placeholder="کلید ادمین" />
+      <button id="loadBtn">نمایش آمار</button>
+    </div>
+
+    <div id="dashboard" style="display:none;">
+      <div class="stats-grid">
+        <div class="stat-box"><div class="label">Ads Completed</div><div class="value" id="adsCompleted">-</div></div>
+        <div class="stat-box"><div class="label">SMS Sent</div><div class="value" id="smsSent">-</div></div>
+        <div class="stat-box"><div class="label">Estimated Ad Revenue</div><div class="value" id="totalAdRevenue">-</div></div>
+        <div class="stat-box"><div class="label">SMS Cost</div><div class="value" id="totalSmsCost">-</div></div>
+        <div class="stat-box"><div class="label">Net Profit/Loss</div><div class="value" id="netProfit">-</div></div>
+        <div class="stat-box"><div class="label">Revenue / Ad</div><div class="value" id="avgAdRevenue">-</div></div>
+        <div class="stat-box"><div class="label">Cost / SMS</div><div class="value" id="avgSmsCost">-</div></div>
+        <div class="stat-box"><div class="label">Profit / Completed Ad</div><div class="value" id="profitPerAd">-</div></div>
+        <div class="stat-box"><div class="label">SMS Success Rate</div><div class="value" id="smsSuccessRate">-</div></div>
+        <div class="stat-box"><div class="label">Ad Completion Rate</div><div class="value" id="adCompletionRate">-</div></div>
+      </div>
+
+      <div id="verdict" class="verdict"></div>
+
+      <table>
+        <thead>
+          <tr><th>زمان</th><th>شماره</th><th>تبلیغ</th><th>SMS</th><th>هزینه SMS</th><th>درآمد تبلیغ</th><th>سود</th></tr>
+        </thead>
+        <tbody id="txBody"></tbody>
+      </table>
+    </div>
+
+    <div id="status" class="status"></div>
+  </div>
+
+  <script>
+    const SUPABASE_FUNCTIONS_URL = "https://supyaydujrvssooshalp.supabase.co/functions/v1";
+    const statusEl = document.getElementById("status");
+
+    function fmt(n) {
+      return typeof n === "number" ? "$" + n.toFixed(4) : "-";
+    }
+    function pct(n) {
+      return typeof n === "number" ? (n * 100).toFixed(1) + "%" : "-";
+    }
+
+    document.getElementById("loadBtn").addEventListener("click", async () => {
+      const adminKey = document.getElementById("adminKey").value.trim();
+      if (!adminKey) return;
+      statusEl.textContent = "در حال بارگذاری...";
+      statusEl.className = "status";
+
+      try {
+        const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/get-stats`, {
+          headers: { "x-admin-key": adminKey },
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          statusEl.textContent = data.error ?? "خطا در دریافت آمار.";
+          statusEl.className = "status err";
+          return;
+        }
+
+        document.getElementById("loginBox").style.display = "none";
+        document.getElementById("dashboard").style.display = "block";
+        statusEl.textContent = "";
+
+        document.getElementById("adsCompleted").textContent = data.adsCompleted;
+        document.getElementById("smsSent").textContent = data.smsSent;
+        document.getElementById("totalAdRevenue").textContent = fmt(data.totalAdRevenue);
+        document.getElementById("totalSmsCost").textContent = fmt(data.totalSmsCost);
+        document.getElementById("netProfit").textContent = fmt(data.netProfit);
+        document.getElementById("avgAdRevenue").textContent = fmt(data.avgAdRevenue);
+        document.getElementById("avgSmsCost").textContent = fmt(data.avgSmsCost);
+        document.getElementById("profitPerAd").textContent = fmt(data.profitPerAd);
+        document.getElementById("smsSuccessRate").textContent = pct(data.smsSuccessRate);
+        document.getElementById("adCompletionRate").textContent = pct(data.adCompletionRate);
+
+        const verdictEl = document.getElementById("verdict");
+        if (data.adsCompleted === 0 || data.smsSent === 0) {
+          verdictEl.textContent = "هنوز داده‌ی کافی برای نتیجه‌گیری وجود ندارد.";
+          verdictEl.className = "verdict";
+        } else if (data.netProfit >= 0) {
+          verdictEl.textContent = "🟢 از نظر اقتصادی این مدل در این تست سودده است.";
+          verdictEl.className = "verdict green";
+        } else {
+          const need = data.breakEvenAds != null ? Math.ceil(data.breakEvenAds) : "-";
+          verdictEl.textContent =
+            `🔴 یک تبلیغ هزینه SMS را پوشش نمی‌دهد. حداقل ${need} تبلیغ برای پوشش هزینه‌ی یک SMS لازم است.`;
+          verdictEl.className = "verdict red";
+        }
+
+        const tbody = document.getElementById("txBody");
+        tbody.innerHTML = "";
+        for (const row of data.rows) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${new Date(row.ts).toLocaleString("fa-IR")}</td>
+            <td>${row.phone_masked}</td>
+            <td>${row.ad_completed ? "✅" : "❌"}</td>
+            <td>${row.sms_status}</td>
+            <td>${fmt(row.sms_cost)}</td>
+            <td>${fmt(row.ad_revenue)}</td>
+            <td>${fmt(row.profit)}</td>
+          `;
+          tbody.appendChild(tr);
+        }
+      } catch (e) {
+        statusEl.textContent = "خطای غیرمنتظره: " + e.message;
+        statusEl.className = "status err";
+      }
+    });
+  </script>
+</body>
+</html>
