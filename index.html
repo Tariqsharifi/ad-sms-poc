@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SMS رایگان با تماشای تبلیغ</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="card">
+    <span class="badge" id="modeBadge">TEST MODE</span>
+    <h1>🎁 SMS رایگان</h1>
+    <p class="subtitle">با تماشای کامل یک تبلیغ کوتاه، یک SMS واقعی دریافت کنید.</p>
+
+    <div id="step-phone">
+      <label for="country">کشور</label>
+      <select id="country">
+        <option value="IR">ایران (+98)</option>
+        <option value="AF">افغانستان (+93)</option>
+      </select>
+
+      <label for="phone">شماره موبایل</label>
+      <input type="tel" id="phone" placeholder="مثلاً 9121234567" />
+
+      <button id="startBtn">🎬 مشاهده تبلیغ و دریافت SMS</button>
+    </div>
+
+    <div id="status" class="status"></div>
+  </div>
+
+  <script src="js/ad-provider.js"></script>
+  <script>
+    const SUPABASE_FUNCTIONS_URL = "https://supyaydujrvssooshalp.supabase.co/functions/v1";
+
+    const statusEl = document.getElementById("status");
+    const startBtn = document.getElementById("startBtn");
+    const modeBadge = document.getElementById("modeBadge");
+    modeBadge.textContent = AD_CONFIG.testMode ? "TEST MODE" : "LIVE TEST";
+    modeBadge.style.background = AD_CONFIG.testMode ? "#334155" : "#7f1d1d";
+
+    function setStatus(msg, type) {
+      statusEl.textContent = msg;
+      statusEl.className = "status " + (type ?? "");
+    }
+
+    function normalizePhone(raw, country) {
+      const digits = raw.replace(/\D/g, "");
+      if (country === "IR") {
+        const local = digits.replace(/^0/, "");
+        return "+98" + local;
+      }
+      if (country === "AF") {
+        const local = digits.replace(/^0/, "");
+        return "+93" + local;
+      }
+      return raw;
+    }
+
+    startBtn.addEventListener("click", async () => {
+      const country = document.getElementById("country").value;
+      const rawPhone = document.getElementById("phone").value.trim();
+      if (!rawPhone) {
+        setStatus("لطفاً شماره موبایل را وارد کنید.", "err");
+        return;
+      }
+      const phone = normalizePhone(rawPhone, country);
+
+      startBtn.disabled = true;
+      setStatus("در حال بررسی...", "");
+
+      try {
+        const sessionRes = await fetch(`${SUPABASE_FUNCTIONS_URL}/start-session`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone, country }),
+        });
+        const sessionData = await sessionRes.json();
+        if (!sessionRes.ok) {
+          setStatus(sessionData.error ?? "خطا در ساخت session.", "err");
+          startBtn.disabled = false;
+          return;
+        }
+
+        setStatus("🎬 در حال نمایش تبلیغ...", "");
+        const adProvider = getAdProvider();
+        const adResult = await adProvider.loadAndShow();
+
+        if (!adResult.completed) {
+          setStatus("❌ تبلیغ کامل مشاهده نشد. SMS ارسال نمی‌شود.", "err");
+          startBtn.disabled = false;
+          return;
+        }
+
+        setStatus("✅ تبلیغ کامل شد. در حال ارسال SMS...", "ok");
+
+        const claimRes = await fetch(`${SUPABASE_FUNCTIONS_URL}/claim-reward`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionToken: sessionData.sessionToken }),
+        });
+        const claimData = await claimRes.json();
+
+        if (!claimRes.ok) {
+          setStatus("❌ " + (claimData.error ?? "ارسال SMS ناموفق بود."), "err");
+          startBtn.disabled = false;
+          return;
+        }
+
+        setStatus("✅ SMS ارسال شد. کد تأیید برای شما پیامک شد.", "ok");
+      } catch (e) {
+        setStatus("خطای غیرمنتظره: " + e.message, "err");
+        startBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
